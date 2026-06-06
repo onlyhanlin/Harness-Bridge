@@ -1,0 +1,90 @@
+# ═══════════════════════════════════════════════════════════════
+# OpenSpec ↔ Superpowers Bridge — 流程定义
+# ═══════════════════════════════════════════════════════════════
+#
+# 每个 phase 定义一个阶段，按顺序执行。
+# AI 执行引擎（bridge.md）按 phases 顺序推进，
+# 每完成一个 phase 写入 state.yaml。
+# 中断后运行 "bridge continue" 从 state.yaml 恢复。
+
+version: 1
+
+phases:
+
+  # ── Phase 1: 生成变更文件 ──
+  - id: propose
+    description: 生成 OpenSpec proposal / specs / design / tasks
+    engine: openspec
+    action:
+      type: slash_command
+      command: /opsx:propose
+      argument: "{change_name}"
+    completion:
+      type: file_exists
+      paths:
+        - openspec/changes/{change_name}/proposal.md
+        - openspec/changes/{change_name}/tasks.md
+    gates:
+      - type: user_approval
+        message: "请审批 OpenSpec 变更文件 (proposal + specs + design + tasks)，批准后继续。"
+
+  # ── Phase 2: 工作空间隔离 ──
+  - id: worktree
+    description: 创建 git worktree 隔离环境
+    engine: superpowers
+    action:
+      type: skill
+      skill: using-git-worktrees
+    completion:
+      type: tests_pass
+      command: "{config:execution.workspace.baseline_test}"
+
+  # ── Phase 3: TDD 执行 ──
+  - id: execute
+    description: 逐条 TDD 执行 tasks.md，每步触发检查点
+    engine: superpowers
+    action:
+      type: tdd_loop
+      source: openspec/changes/{change_name}/tasks.md
+      unit_command: "{config:execution.tdd.unit_command}"
+      build_command: "{config:execution.tdd.build_command}"
+    checkpoints_from_config: true   # 从 openspec/config.yaml execution.checkpoints 读取
+    completion:
+      type: all_tasks_checked
+      source: openspec/changes/{change_name}/tasks.md
+
+  # ── Phase 4: 全量验证 ──
+  - id: verify
+    description: 运行全量测试 + 验证
+    engine: superpowers
+    action:
+      type: skill
+      skill: verification-before-completion
+    pre_steps_from_config: true     # 从 config.yaml execution.steps.pre_archive 读取
+    post_steps_from_config: true    # 从 config.yaml execution.steps.post 读取
+    completion:
+      type: tests_pass
+      command: "{config:execution.tdd.unit_command}"
+
+  # ── Phase 5: 归档 ──
+  - id: archive
+    description: OpenSpec 归档变更
+    engine: openspec
+    action:
+      type: slash_command
+      command: /opsx:archive
+      argument: "{change_name}"
+    completion:
+      type: dir_exists
+      path: openspec/changes/archive/
+    gates:
+      - type: user_choice
+        options:
+          - id: merge
+            title: 合并回主分支
+            skill: finishing-a-development-branch
+          - id: pr
+            title: 推送并创建 PR
+            skill: finishing-a-development-branch
+          - id: keep
+            title: 保留不动
