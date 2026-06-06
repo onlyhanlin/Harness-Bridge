@@ -47,10 +47,10 @@ bash openspec-superpowers-bridge/bridge.sh install --tool-path /path/to/tools
 
 ```bash
 # 头脑风暴 → 生成 config.yaml
-bridge new "需求描述"
+bridge new "需求名称描述"
 
 # 开始执行（propose → worktree → execute → verify → archive）
-bridge run "需求描述"
+bridge run "需求名称描述"
 
 # 中断后恢复
 bridge continue
